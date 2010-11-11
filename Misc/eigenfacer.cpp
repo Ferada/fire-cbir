@@ -56,7 +56,7 @@ double getEnergy(const vector<double>& vec) {
 double energTrans(fftw_complex **F,const uint i,const uint D) {
   double sum=.0;
   for(uint d=0;d<D;++d) {
-    sum+=F[d][i].re*F[d][i].re;
+    sum+=F[d][i][0]*F[d][i][0];
   }
   return sum;
 }
@@ -88,15 +88,15 @@ ImageFeature detect(const ImageFeature& img, const PCA& pca,uint dim, uint w, ui
   // get memory for calculations
   fftw_complex *FIMG=NULL, **FFILTER=NULL, **FMULT=NULL;
   FIMG=new fftw_complex[paddim]; 
-  for(uint i=0;i<paddim;++i) {FIMG[i].re=0.0;FIMG[i].im=0.0;}
+  for(uint i=0;i<paddim;++i) {FIMG[i][0]=0.0;FIMG[i][1]=0.0;}
   FFILTER=new fftw_complex*[dim];
   FMULT=new fftw_complex*[dim];
   for(uint i=0;i<dim;++i) {
     FFILTER[i]=new fftw_complex[paddim];
-    for(uint j=0;j<imgdim;++j) {FFILTER[i][j].re=0.0;FFILTER[i][j].im=0.0;}
+    for(uint j=0;j<imgdim;++j) {FFILTER[i][j][0]=0.0;FFILTER[i][j][1]=0.0;}
     
     FMULT[i]=new fftw_complex[paddim];
-    for(uint j=0;j<imgdim;++j) {FMULT[i][j].re=0.0;FMULT[i][j].im=0.0;}
+    for(uint j=0;j<imgdim;++j) {FMULT[i][j][0]=0.0;FMULT[i][j][1]=0.0;}
   }
   
   DBG(10) << "Memory allocated" << endl;
@@ -104,16 +104,19 @@ ImageFeature detect(const ImageFeature& img, const PCA& pca,uint dim, uint w, ui
   vector<double> meanTrans=pca.transform(pca.mean(),dim);
   
   // create strategy for fft
-  fftwnd_plan plan = fftw2d_create_plan(padx,pady, FFTW_FORWARD, FFTW_ESTIMATE  | FFTW_IN_PLACE); 
-  fftwnd_plan planb = fftw2d_create_plan(padx,pady, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_IN_PLACE); 
+  // fftwnd_plan plan = fftw2d_create_plan(padx,pady, FFTW_FORWARD, FFTW_ESTIMATE  | FFTW_IN_PLACE); 
+  // fftwnd_plan planb = fftw2d_create_plan(padx,pady, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_IN_PLACE); 
+  fftw_plan plan = fftw_plan_dft_2d(padx, pady, FIMG, NULL, FFTW_FORWARD, FFTW_ESTIMATE);
+  fftw_plan planb = fftw_plan_dft_2d(padx, pady, FMULT[0], NULL, FFTW_BACKWARD, FFTW_ESTIMATE);
   
   DBG(10) << "Strategies for FFT created" << endl;
   
   //copy image into fourier transform data structure
-  for(uint x=0;x<img.xsize();++x) { for(uint y=0;y<img.ysize();++y) { FIMG[y*padx+x].re=img(x,y,0); } }
+  for(uint x=0;x<img.xsize();++x) { for(uint y=0;y<img.ysize();++y) { FIMG[y*padx+x][0]=img(x,y,0); } }
   
   // fourier transform the image
-  fftwnd_one(plan,FIMG,NULL);
+  // fftwnd_one(plan,FIMG,NULL);
+  fftw_execute_dft(plan, FIMG, NULL);
   
   DBG(10) << "Image Transformed" << endl;
   
@@ -123,28 +126,30 @@ ImageFeature detect(const ImageFeature& img, const PCA& pca,uint dim, uint w, ui
     for(uint x=0;x<w;++x) {
       for(uint y=0;y<h;++y) {
         uint i=y*padx+x;
-        FFILTER[d][i].re=pca.eigenvector(d)[y*w+x];
+        FFILTER[d][i][0]=pca.eigenvector(d)[y*w+x];
       }
     }
-    fftwnd_one(plan,FFILTER[d],NULL);
+    // fftwnd_one(plan,FFILTER[d],NULL);
+    fftw_execute_dft(plan, FFILTER[d], NULL);
     DBG(10) << "Filter " << d << " transformed." << endl;
   }
   
   // multiplication in fourier domain
   for(uint d=0;d<dim;++d) {
     for(uint i=0;i<paddim;++i) {
-      FMULT[d][i].re=FIMG[i].re*FFILTER[d][i].re-FIMG[i].im*FFILTER[d][i].im;
-      FMULT[d][i].im=FIMG[i].re*FFILTER[d][i].im+FIMG[i].im*FFILTER[d][i].re;
+      FMULT[d][i][0]=FIMG[i][0]*FFILTER[d][i][0]-FIMG[i][1]*FFILTER[d][i][1];
+      FMULT[d][i][1]=FIMG[i][0]*FFILTER[d][i][1]+FIMG[i][1]*FFILTER[d][i][0];
     }
     DBG(10) << "Filter " << d << " applied." ;
     //fourier back transform
-    fftwnd_one(planb,FMULT[d],NULL);
+    // fftwnd_one(planb,FMULT[d],NULL);
+    fftw_execute_dft(planb, FMULT[d], NULL);
     BLINK(10) << "... backtransformed.." ;
     
     
     // subtract transformed mean
     for(uint i=0;i<paddim;++i) {
-      FMULT[d][i].re=FMULT[d][i].re/paddim-meanTrans[d];
+      FMULT[d][i][0]=FMULT[d][i][0]/paddim-meanTrans[d];
     }
     BLINK(10) << ". Mean subtracted." << endl;
   }

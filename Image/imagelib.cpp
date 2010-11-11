@@ -89,7 +89,7 @@ void fftconvolve(ImageFeature &img, const ImageFeature &filter) {
   for(uint y=0;y<height;++y) {
     for(uint x=0;x<width;++x) {
       uint idx=((y+yoffset)*padded)+x+xoffset;
-      FIMG[idx].re=img(x,y,0);
+      FIMG[idx][0]=img(x,y,0);
     }
   }
   
@@ -97,36 +97,45 @@ void fftconvolve(ImageFeature &img, const ImageFeature &filter) {
   xoffset=padded/2-filter.xsize()/2; yoffset=padded/2-filter.ysize()/2;
   for(uint y=0;y<filter.ysize();++y) {
     for(uint x=0;x<filter.xsize();++x) {
-      FFILTER[y*padded+x].re=filter(x,y,0);
+      FFILTER[y*padded+x][0]=filter(x,y,0);
     }
   }
   
   //fourier transform
-  fftwnd_plan plan = fftw2d_create_plan(padded, padded, FFTW_FORWARD, FFTW_ESTIMATE  | FFTW_IN_PLACE); 
-  fftwnd_one(plan,FIMG,NULL);
-  fftwnd_one(plan,FFILTER,NULL);
-  fftwnd_destroy_plan(plan);
+  // fftwnd_plan plan = fftw2d_create_plan(padded, padded, FFTW_FORWARD, FFTW_ESTIMATE  | FFTW_IN_PLACE); 
+  // fftwnd_one(plan,FIMG,NULL);
+  // fftwnd_one(plan,FFILTER,NULL);
+  // fftwnd_destroy_plan(plan);
+
+  fftw_plan plan = fftw_plan_dft_2d(padded, padded, FIMG, NULL, FFTW_FORWARD, FFTW_ESTIMATE);
+  fftw_execute_dft (plan, FIMG, NULL);
+  fftw_execute_dft (plan, FFILTER, NULL);
+  fftw_destroy_plan (plan);
   
   //multiplication in fourier domain
   for(uint x=0;x<dim;++x) {
-    double re=FIMG[x].re*FFILTER[x].re-FIMG[x].im*FFILTER[x].im;
-    double im=FIMG[x].re*FFILTER[x].im+FIMG[x].im*FFILTER[x].re;
+    double re=FIMG[x][0]*FFILTER[x][0]-FIMG[x][1]*FFILTER[x][1];
+    double im=FIMG[x][0]*FFILTER[x][1]+FIMG[x][1]*FFILTER[x][0];
     
-    FIMG[x].re=re;
-    FIMG[x].im=im;
+    FIMG[x][0]=re;
+    FIMG[x][1]=im;
   }
   
   //fourier transform backwards
-  fftwnd_plan planb = fftw2d_create_plan(padded, padded, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_IN_PLACE); 
-  fftwnd_one(planb,FIMG,NULL);
-  fftwnd_destroy_plan(planb);
+  // fftwnd_plan planb = fftw2d_create_plan(padded, padded, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_IN_PLACE); 
+  // fftwnd_one(planb,FIMG,NULL);
+  // fftwnd_destroy_plan(planb);
+
+  fftw_plan planb = fftw_plan_dft_2d(padded, padded, FIMG, NULL, FFTW_BACKWARD, FFTW_ESTIMATE);
+  fftw_execute_dft (planb, FIMG, NULL);
+  fftw_destroy_plan (plan);
 
   //copy back
   xoffset=padded/2-width/2;  yoffset=padded/2-height/2;
   for(uint y=0;y<height;++y) {
     for(uint x=0;x<width;++x) {
       uint idx=((y+yoffset)*padded)+x+xoffset;
-      img(x,y,0)=FIMG[idx].re;
+      img(x,y,0)=FIMG[idx][0];
     }
   }
   delete[] FFILTER;
@@ -738,19 +747,23 @@ ImageFeature fft(const ImageFeature &img) {
 
   for(uint x=0;x<img.xsize();++x) {
     for(uint y=0;y<img.ysize();++y) {
-      FIMG[x][y].re=img(x,y,0);
-      FIMG[x][y].im=0;
+      FIMG[x][y][0]=img(x,y,0);
+      FIMG[x][y][1]=0;
     }
   }
   
-  fftwnd_plan plan = fftw2d_create_plan(img.xsize(),img.ysize(), FFTW_FORWARD, FFTW_ESTIMATE  | FFTW_IN_PLACE); 
-  fftwnd_one(plan,&FIMG[0][0],NULL);
-  fftwnd_destroy_plan(plan);
+  // fftwnd_plan plan = fftw2d_create_plan(img.xsize(),img.ysize(), FFTW_FORWARD, FFTW_ESTIMATE  | FFTW_IN_PLACE); 
+  // fftwnd_one(plan,&FIMG[0][0],NULL);
+  // fftwnd_destroy_plan(plan);
+  fftw_plan plan = fftw_plan_dft_2d(img.xsize(), img.ysize(), &FIMG[0][0], NULL, FFTW_FORWARD, FFTW_ESTIMATE);
+  fftw_execute_dft (plan, &FIMG[0][0], NULL);
+  fftw_destroy_plan (plan);
+
   
   for(uint x=0;x<img.xsize();++x) {
     for(uint y=0;y<img.ysize();++y) {
-      result(x,y,0)=FIMG[x][y].re;
-      result(x,y,1)=FIMG[x][y].im;
+      result(x,y,0)=FIMG[x][y][0];
+      result(x,y,1)=FIMG[x][y][1];
     }
   }
 #else
@@ -769,20 +782,24 @@ ImageFeature fftscale(const ImageFeature& image, const uint newWidth, const uint
   // variables for image and filter in transformed
   fftw_complex *FIMG=new fftw_complex[image.xsize()*image.ysize()];
   fftw_complex *FRESULT=new fftw_complex[newWidth*newHeight];
-  for(uint i=0;i<newWidth*newHeight;++i) { FRESULT[i].re=0.0; FRESULT[i].im=0.0;}
+  for(uint i=0;i<newWidth*newHeight;++i) { FRESULT[i][0]=0.0; FRESULT[i][1]=0.0;}
   
   //copy image to temp variable
   for(uint x=0;x<image.xsize();++x) {
     for(uint y=0;y<image.ysize();++y) {
-      FIMG[y*imgwidth+x].re=image(x,y,0);
-      FIMG[y*imgwidth+x].im=0.0;
+      FIMG[y*imgwidth+x][0]=image(x,y,0);
+      FIMG[y*imgwidth+x][1]=0.0;
     }
   }
   
   //fourier transform
-  fftwnd_plan plan = fftw2d_create_plan(imgheight,imgwidth, FFTW_FORWARD, FFTW_ESTIMATE  | FFTW_IN_PLACE); 
-  fftwnd_one(plan,FIMG,NULL);
-  fftwnd_destroy_plan(plan);
+  // fftwnd_plan plan = fftw2d_create_plan(imgheight,imgwidth, FFTW_FORWARD, FFTW_ESTIMATE  | FFTW_IN_PLACE); 
+  // fftwnd_one(plan,FIMG,NULL);
+  // fftwnd_destroy_plan(plan);
+
+  fftw_plan plan = fftw_plan_dft_2d(imgheight, imgwidth, FIMG, NULL, FFTW_FORWARD, FFTW_ESTIMATE);
+  fftw_execute_dft (plan, FIMG, NULL);
+  fftw_destroy_plan (plan);
 
   // copy into destination with zeropadding
   
@@ -808,7 +825,8 @@ ImageFeature fftscale(const ImageFeature& image, const uint newWidth, const uint
   //oben links
   for(uint y=0;y<gh2 and y<gnh2;++y) {
     for(uint x=0;x<gw2 and x<gnw2;++x) {
-      FRESULT[y*newWidth+x]=FIMG[y*imgwidth+x];
+      FRESULT[y*newWidth+x][0]=FIMG[y*imgwidth+x][0];
+      FRESULT[y*newWidth+x][1]=FIMG[y*imgwidth+x][1];
     }
   }
   
@@ -816,7 +834,8 @@ ImageFeature fftscale(const ImageFeature& image, const uint newWidth, const uint
   //oben rechts
   for(uint y=0;y<gh2 and y<gnh2;++y) {
     for(uint x=0;x<w2 and x<nw2;++x) {
-      FRESULT[y*newWidth+newWidth-nw2+x]=FIMG[y*imgwidth+imgwidth-nw2+x];
+      FRESULT[y*newWidth+newWidth-nw2+x][0]=FIMG[y*imgwidth+imgwidth-nw2+x][0];
+      FRESULT[y*newWidth+newWidth-nw2+x][1]=FIMG[y*imgwidth+imgwidth-nw2+x][1];
     }
   }  
 
@@ -824,7 +843,8 @@ ImageFeature fftscale(const ImageFeature& image, const uint newWidth, const uint
   for(uint y=0;y<h2 and y<nh2;++y) {
     for(uint x=0;x<w2 and x<nw2;++x) {
       //FRESULT[newWidth-nw2+x][newHeight-nh2+y]=FIMG[image.xsize()-nw2+x][image.ysize()-nh2+y];
-      FRESULT[(newHeight-nh2+y)*newWidth+newWidth-nw2+x]=FIMG[(image.ysize()-nh2+y)*imgwidth+image.xsize()-nw2+x];
+      FRESULT[(newHeight-nh2+y)*newWidth+newWidth-nw2+x][0]=FIMG[(image.ysize()-nh2+y)*imgwidth+image.xsize()-nw2+x][0];
+      FRESULT[(newHeight-nh2+y)*newWidth+newWidth-nw2+x][1]=FIMG[(image.ysize()-nh2+y)*imgwidth+image.xsize()-nw2+x][1];
     }
   }
 
@@ -832,15 +852,21 @@ ImageFeature fftscale(const ImageFeature& image, const uint newWidth, const uint
   for(uint y=0;y<h2 and y<nh2;++y) {
     for(uint x=0;x<gw2 and x<gnw2;++x) {
       //FRESULT[x][newHeight-nh2+y]=FIMG[x][image.ysize()-nh2+y];
-      FRESULT[(newHeight-nh2+y)*newWidth+x]=FIMG[(image.ysize()-nh2+y)*imgwidth+x];
+      FRESULT[(newHeight-nh2+y)*newWidth+x][0]=FIMG[(image.ysize()-nh2+y)*imgwidth+x][0];
+      FRESULT[(newHeight-nh2+y)*newWidth+x][1]=FIMG[(image.ysize()-nh2+y)*imgwidth+x][1];
     } 
   }
 
   
   //fourier transform backwards
-  fftwnd_plan planb = fftw2d_create_plan(newHeight,newWidth, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_IN_PLACE); 
-  fftwnd_one(planb,FRESULT,NULL);
-  fftwnd_destroy_plan(planb);
+  // fftwnd_plan planb = fftw2d_create_plan(newHeight,newWidth, FFTW_BACKWARD, FFTW_ESTIMATE | FFTW_IN_PLACE); 
+  // fftwnd_one(planb,FRESULT,NULL);
+  // fftwnd_destroy_plan(planb);
+
+  fftw_plan planb = fftw_plan_dft_2d(newHeight, newWidth, FRESULT, NULL, FFTW_BACKWARD, FFTW_ESTIMATE);
+  fftw_execute_dft (planb, FRESULT, NULL);
+  fftw_destroy_plan (planb);
+
   
 
   int divider=(imgwidth*imgheight);
@@ -848,7 +874,7 @@ ImageFeature fftscale(const ImageFeature& image, const uint newWidth, const uint
   ImageFeature res(newWidth, newHeight,1);
   for(uint x=0;x<newWidth;++x) {
     for(uint y=0;y<newHeight;++y) {
-      res(x,y,0)=sqrt((FRESULT[y*newWidth+x].re*FRESULT[y*newWidth+x].re)+(FRESULT[y*newWidth+x].im*FRESULT[y*newWidth+x].im))/divider;
+      res(x,y,0)=sqrt((FRESULT[y*newWidth+x][0]*FRESULT[y*newWidth+x][0])+(FRESULT[y*newWidth+x][1]*FRESULT[y*newWidth+x][1]))/divider;
     }
   }
   

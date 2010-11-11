@@ -85,10 +85,10 @@ void DifferenceOfGaussian::fftwImage(const ImageFeature& img, int& paddedSize, f
   for(int x = 0; x < paddedWidth; x++) {
     for(int y = 0; y < paddedHeight; y++) {
       idx = y * paddedWidth + x;
-      hsIn[idx].re = complPix[0];
-      hsIn[idx].im = complPix[1];
-      vIn[idx].re = complPix[2];
-      vIn[idx].im = 0.0;
+      hsIn[idx][0] = complPix[0];
+      hsIn[idx][1] = complPix[1];
+      vIn[idx][0] = complPix[2];
+      vIn[idx][1] = 0.0;
     }
   }
 
@@ -108,19 +108,24 @@ void DifferenceOfGaussian::fftwImage(const ImageFeature& img, int& paddedSize, f
       ColorHSV(rValue, gValue, bValue).complexPixel(complPix);
       //idx = (y + yoffset) * paddedWidth + (x + xoffset);
       idx = y * paddedWidth + x;
-      hsIn[idx].re = complPix[0];
-      hsIn[idx].im = complPix[1];
-      vIn[idx].re = complPix[2];
-      vIn[idx].im = 0.0;
+      hsIn[idx][0] = complPix[0];
+      hsIn[idx][1] = complPix[1];
+      vIn[idx][0] = complPix[2];
+      vIn[idx][1] = 0.0;
     }
   }
   
 
   // Fourier-Transformation
-  fftwnd_plan plan = fftw2d_create_plan(paddedWidth, paddedHeight, FFTW_FORWARD, FFTW_ESTIMATE); 
-  fftwnd_one(plan, hsIn, hsTransformed);
-  fftwnd_one(plan, vIn, vTransformed);
-  fftwnd_destroy_plan(plan);
+  // fftwnd_plan plan = fftw2d_create_plan(paddedWidth, paddedHeight, FFTW_FORWARD, FFTW_ESTIMATE); 
+  // fftwnd_one(plan, hsIn, hsTransformed);
+  // fftwnd_one(plan, vIn, vTransformed);
+  // fftwnd_destroy_plan(plan);
+
+  fftw_plan plan = fftw_plan_dft_2d(paddedWidth, paddedHeight, hsIn, hsTransformed, FFTW_FORWARD, FFTW_ESTIMATE);
+  fftw_execute_dft(plan, hsIn, hsTransformed);
+  fftw_execute_dft(plan, vIn, vTransformed);
+  fftw_destroy_plan(plan);
   
   // we do not need the complex input data anymore
   delete[] hsIn;
@@ -166,16 +171,20 @@ void DifferenceOfGaussian::applyFilter(fftw_complex* &hsTransformedImage, fftw_c
   // Apply filter
   for(int y = 0; y < imgSize; y++) {
     for(int x = 0; x < imgSize; x++) {
-      fftw_complex HSttImg = hsTransformedImage[y * imgSize + x];
-      fftw_complex VttImg = vTransformedImage[y * imgSize + x];
-      fftw_complex HSttFilter = hsTransformedFilter[y * imgSize + x];
-      fftw_complex VttFilter = vTransformedFilter[y * imgSize + x];
+      fftw_complex HSttImg = { hsTransformedImage[y * imgSize + x][0], hsTransformedImage[y * imgSize + x][1] };
+      fftw_complex VttImg = { vTransformedImage[y * imgSize + x][0], vTransformedImage[y * imgSize + x][1] };
+      fftw_complex HSttFilter = { hsTransformedFilter[y * imgSize + x][0], hsTransformedFilter[y * imgSize + x][1] };
+      fftw_complex VttFilter = { vTransformedFilter[y * imgSize + x][0], vTransformedFilter[y * imgSize + x][1] };
+      // fftw_complex HSttImg = hsTransformedImage[y * imgSize + x];
+      // fftw_complex VttImg = vTransformedImage[y * imgSize + x];
+      // fftw_complex HSttFilter = hsTransformedFilter[y * imgSize + x];
+      // fftw_complex VttFilter = vTransformedFilter[y * imgSize + x];
       // complex multiplication
-      hsTransformedImage[y * imgSize + x].re = (HSttImg.re * HSttFilter.re) - (HSttImg.im * HSttFilter.im);
-      hsTransformedImage[y * imgSize + x].im = (HSttImg.re * HSttFilter.im) - (HSttImg.im * HSttFilter.re);
+      hsTransformedImage[y * imgSize + x][0] = (HSttImg[0] * HSttFilter[0]) - (HSttImg[1] * HSttFilter[1]);
+      hsTransformedImage[y * imgSize + x][1] = (HSttImg[0] * HSttFilter[1]) - (HSttImg[1] * HSttFilter[0]);
       // complex multiplication
-      vTransformedImage[y * imgSize + x].re = (VttImg.re * VttFilter.re) - (VttImg.im * VttFilter.im);
-      vTransformedImage[y * imgSize + x].im = (VttImg.re * VttFilter.im) - (VttImg.im * VttFilter.re);
+      vTransformedImage[y * imgSize + x][0] = (VttImg[0] * VttFilter[0]) - (VttImg[1] * VttFilter[1]);
+      vTransformedImage[y * imgSize + x][1] = (VttImg[0] * VttFilter[1]) - (VttImg[1] * VttFilter[0]);
     }
   }
 }
@@ -183,14 +192,20 @@ void DifferenceOfGaussian::applyFilter(fftw_complex* &hsTransformedImage, fftw_c
 ImageFeature DifferenceOfGaussian::fftwBackImage(fftw_complex* &hsTransformedImage, fftw_complex* &vTransformedImage, 
 				 fftw_complex* &hsTransformedFilter, fftw_complex* &vTransformedFilter, 
 				 int size, int origX, int origY) {
-  fftwnd_plan plan;
+  // fftwnd_plan plan;
+  fftw_plan plan;
   fftw_complex* hsResult = new fftw_complex[size * size];
   fftw_complex* vResult = new fftw_complex[size * size];
-  plan = fftw2d_create_plan(size, size, FFTW_BACKWARD, FFTW_ESTIMATE); 
-  fftwnd_one(plan, hsTransformedImage, hsResult);
-  fftwnd_one(plan, vTransformedImage, vResult);
+  // plan = fftw2d_create_plan(size, size, FFTW_BACKWARD, FFTW_ESTIMATE); 
+  // fftwnd_one(plan, hsTransformedImage, hsResult);
+  // fftwnd_one(plan, vTransformedImage, vResult);
+  plan = fftw_plan_dft_2d(size, size, hsTransformedFilter, hsResult, FFTW_BACKWARD, FFTW_ESTIMATE);
+  fftw_execute_dft(plan, hsTransformedFilter, hsResult);
+  fftw_execute_dft(plan, vTransformedFilter, vResult);
   //fftwnd_one(plan, hsTransformedFilter, hsResult);
   //fftwnd_one(plan, vTransformedFilter, vResult);
+
+  
 
   /*
   int HSno, Vno;
@@ -210,16 +225,17 @@ ImageFeature DifferenceOfGaussian::fftwBackImage(fftw_complex* &hsTransformedIma
   for(int y = 0; y < origY; y++) {
     for(int x = 0; x < origX; x++) {
       idx = (y + yoffset) * size + (x + xoffset);
-      newImage(x, y, 0) = sqrt(vResult[idx].re * vResult[idx].re + vResult[idx].im * vResult[idx].im);
+      newImage(x, y, 0) = sqrt(vResult[idx][0] * vResult[idx][0] + vResult[idx][1] * vResult[idx][1]);
       /*
       if (GABOR_USE_HS) {
-        (*this)(x - horizontalMargin, y - verticalMargin, HSno) = sqrt(hsResult[idx].re * hsResult[idx].re + hsResult[idx].im * hsResult[idx].im);
+        (*this)(x - horizontalMargin, y - verticalMargin, HSno) = sqrt(hsResult[idx][0] * hsResult[idx][0] + hsResult[idx][1] * hsResult[idx][1]);
       }
       */
     }
   }
 
-  fftwnd_destroy_plan(plan);
+  // fftwnd_destroy_plan(plan);
+  fftw_destroy_plan(plan);
   delete[] hsResult;
   delete[] vResult;
   delete[] hsTransformedImage;

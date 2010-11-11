@@ -144,10 +144,10 @@ void Gabor::init(fftw_complex* &hsTransformed, fftw_complex* &vTransformed) {
   for(uint x = 0; x < paddedWidth; x++) {
     for(uint y = 0; y < paddedHeight; y++) {
       idx = y * paddedWidth + x;
-      hsIn[idx].re = complPix[0];
-      hsIn[idx].im = complPix[1];
-      vIn[idx].re = complPix[2];
-      vIn[idx].im = 0.0;
+      hsIn[idx][0] = complPix[0];
+      hsIn[idx][1] = complPix[1];
+      vIn[idx][0] = complPix[2];
+      vIn[idx][1] = 0.0;
     }
   }
 
@@ -172,19 +172,24 @@ void Gabor::init(fftw_complex* &hsTransformed, fftw_complex* &vTransformed) {
       }
       ColorHSV(rValue, gValue, bValue).complexPixel(complPix);
       idx = (y + yoffset) * paddedWidth + (x + xoffset);
-      hsIn[idx].re = complPix[0];
-      hsIn[idx].im = complPix[1];
-      vIn[idx].re = complPix[2];
-      vIn[idx].im = 0.0;
+      hsIn[idx][0] = complPix[0];
+      hsIn[idx][1] = complPix[1];
+      vIn[idx][0] = complPix[2];
+      vIn[idx][1] = 0.0;
     }
   }
   
 
   // Fourier-Transformation
-  fftwnd_plan plan = fftw2d_create_plan(paddedWidth, paddedHeight, FFTW_FORWARD, FFTW_ESTIMATE); 
-  fftwnd_one(plan, hsIn, hsTransformed);
-  fftwnd_one(plan, vIn, vTransformed);
-  fftwnd_destroy_plan(plan);
+  // fftwnd_plan plan = fftw2d_create_plan(paddedWidth, paddedHeight, FFTW_FORWARD, FFTW_ESTIMATE); 
+  // fftwnd_one(plan, hsIn, hsTransformed);
+  // fftwnd_one(plan, vIn, vTransformed);
+  // fftwnd_destroy_plan(plan);
+
+  fftw_plan plan = fftw_plan_dft_2d(paddedWidth, paddedHeight, hsIn, hsTransformed, FFTW_FORWARD, FFTW_ESTIMATE);
+  fftw_execute_dft (plan, hsIn, hsTransformed);
+  fftw_execute_dft (plan, vIn, vTransformed);
+  fftw_destroy_plan (plan);
   
   // we do not need the complex input data anymore
   delete[] hsIn;
@@ -249,8 +254,11 @@ void Gabor::extractGabor(fftw_complex* hsTransformed, fftw_complex* vTransformed
   fftw_complex* vSave = new fftw_complex[dim];
   complex<double>* curFilter = new complex<double>[dim];
 
-  fftwnd_plan plan;
-  plan = fftw2d_create_plan(paddedWidth, paddedHeight, FFTW_BACKWARD, FFTW_ESTIMATE); 
+  // fftwnd_plan plan;
+  // plan = fftw2d_create_plan(paddedWidth, paddedHeight, FFTW_BACKWARD, FFTW_ESTIMATE); 
+
+  fftw_plan plan;
+  plan = fftw_plan_dft_2d(paddedWidth, paddedHeight, hsTransformed, hsResult, FFTW_BACKWARD, FFTW_ESTIMATE);
   
   for(uint aktFreq=0; aktFreq<numFreq; aktFreq++) {
     for(unsigned int aktPha=0; aktPha<numPha; aktPha++)  {
@@ -266,24 +274,29 @@ void Gabor::extractGabor(fftw_complex* hsTransformed, fftw_complex* vTransformed
       for(unsigned int y=0;y<paddedHeight;++y) {
         for(unsigned int x=0;x<paddedWidth;++x) {
 	  
-          fftw_complex HStt = hsTransformed[y * maxnn + x];
-          fftw_complex Vtt = vTransformed[y * maxnn + x];
+          fftw_complex HStt = { hsTransformed[y * maxnn + x][0], hsTransformed[y * maxnn + x][1] };
+          fftw_complex Vtt = { vTransformed[y * maxnn + x][0], vTransformed[y * maxnn + x][1] };
+          // fftw_complex HStt = hsTransformed[y * maxnn + x];
+          // fftw_complex Vtt = vTransformed[y * maxnn + x];
           fftw_complex filter;
-          filter.re = curFilter[y * paddedWidth + x].real();
-          filter.im = curFilter[y * paddedWidth + x].imag();
+          filter[0] = curFilter[y * paddedWidth + x].real();
+          filter[1] = curFilter[y * paddedWidth + x].imag();
 	  
           // complex multiplication of 'HStt' with 'filter'
-          hsTransformed[y * maxnn + x].re = (HStt.re * filter.re) - (HStt.im * filter.im);
-          hsTransformed[y * maxnn + x].im = (HStt.re * filter.im) + (HStt.im * filter.re); // here was a minus instead of the plus
+          hsTransformed[y * maxnn + x][0] = (HStt[0] * filter[0]) - (HStt[1] * filter[1]);
+          hsTransformed[y * maxnn + x][1] = (HStt[0] * filter[1]) + (HStt[1] * filter[0]); // here was a minus instead of the plus
           // complex multiplication of 'Vtt' with 'filter'
-          vTransformed[y * maxnn + x].re = (Vtt.re * filter.re) - (Vtt.im * filter.im);
-          vTransformed[y * maxnn + x].im = (Vtt.re * filter.im) + (Vtt.im * filter.re); // here was a minus instead of the plus
+          vTransformed[y * maxnn + x][0] = (Vtt[0] * filter[0]) - (Vtt[1] * filter[1]);
+          vTransformed[y * maxnn + x][1] = (Vtt[0] * filter[1]) + (Vtt[1] * filter[0]); // here was a minus instead of the plus
         }
       }
 
       // Fourier-Transformation backwards
-      fftwnd_one(plan, hsTransformed, hsResult);
-      fftwnd_one(plan, vTransformed, vResult);
+      // fftwnd_one(plan, hsTransformed, hsResult);
+      // fftwnd_one(plan, vTransformed, vResult);
+
+      fftw_execute_dft(plan, hsTransformed, hsResult);
+      fftw_execute_dft(plan, vTransformed, vResult);
       
       // Save calculated feature
       copyToResult(hsResult, vResult, aktFreq * numPha + aktPha);
@@ -295,7 +308,8 @@ void Gabor::extractGabor(fftw_complex* hsTransformed, fftw_complex* vTransformed
     }
   }
 
-  fftwnd_destroy_plan(plan);
+  // fftwnd_destroy_plan(plan);
+  fftw_destroy_plan(plan);
 
   // cleanup allocated memory
   delete[] curFilter;
@@ -328,9 +342,9 @@ void Gabor::copyToResult(fftw_complex* hsResult, fftw_complex* vResult, int d)
     for(uint x = horizontalMargin; x < width - horizontalMargin; ++x) {
       // consider the margins
       idx = (y + yoffset) * maxnn + (x + xoffset);
-      (*this)(x - horizontalMargin, y - verticalMargin, Vno) = sqrt(vResult[idx].re * vResult[idx].re + vResult[idx].im * vResult[idx].im);
+      (*this)(x - horizontalMargin, y - verticalMargin, Vno) = sqrt(vResult[idx][0] * vResult[idx][0] + vResult[idx][1] * vResult[idx][1]);
       if (GABOR_USE_HS) {
-        (*this)(x - horizontalMargin, y - verticalMargin, HSno) = sqrt(hsResult[idx].re * hsResult[idx].re + hsResult[idx].im * hsResult[idx].im);
+        (*this)(x - horizontalMargin, y - verticalMargin, HSno) = sqrt(hsResult[idx][0] * hsResult[idx][0] + hsResult[idx][1] * hsResult[idx][1]);
 
       }
     }
