@@ -41,7 +41,7 @@ void SupportVectorMachine::load(const std::string& filename) {
 
 SupportVectorMachine::~SupportVectorMachine() {
 #ifdef HAVE_LIBSVM
-  svm_destroy_model(model);
+  svm_free_and_destroy_model(&model);
   svm_destroy_param(&param);
   delete[] x_space;
 #endif
